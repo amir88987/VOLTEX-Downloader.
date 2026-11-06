@@ -22,11 +22,15 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
-            echo "::error::Signing secrets are missing. Add KEYSTORE_B64, KEYSTORE_PASSWORD and KEY_ALIAS in Settings > Secrets and variables > Actions."
+            echo "::error::Signing secrets are missing."
             exit 1
           fi
-          echo "$KEYSTORE_B64" | base64 -d > release.jks
-          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEYSTORE_PASSWORD" > keystore.properties
+          CLEAN=$(printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=')
+          echo "raw length: ${#KEYSTORE_B64}  clean length: ${#CLEAN}  (expected 3576)"
+          printf '%s' "$CLEAN" | base64 -d > release.jks || { echo "::error::KEYSTORE_B64 is not valid base64. Paste the single long line again."; exit 1; }
+          PASS=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d ' \r\n')
+          ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n')
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$PASS" "$ALIAS" "$PASS" > keystore.properties
       - name: Build release APK
         shell: bash
         run: |
@@ -37,6 +41,8 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          mkdir -p logs
+          touch logs/build-log.txt
           grep -E "^e: |error:|What went wrong|Execution failed|FAILED|Unresolved|AAPT" -A4 logs/build-log.txt | head -150 > logs/ERRORS.txt || true
           cat logs/ERRORS.txt
       - name: Build lite APK (smaller)
