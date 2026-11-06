@@ -1,5 +1,111 @@
+import java.util.Properties
+
 plugins {
-    id("com.android.application") version "8.7.3" apply false
-    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// اگر فایل keystore.properties کنار پروژه باشد، APK با کلید اختصاصی امضا می‌شود.
+// در غیر این صورت (فقط ساخت محلی) با کلید debug امضا می‌شود؛ APK منتشرشده باید حتماً با کلید اختصاصی باشد.
+val ksProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+android {
+    namespace = "app.videogir"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "app.videogir"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 6
+        versionName = "1.5"
+    }
+
+    // خطاهای lint ساخت را متوقف نکنند
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+
+    signingConfigs {
+        // حالت بدون کلید اختصاصی (مثلاً ساخت محلی): همه نوع امضا فعال باشد
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+        create("release") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            if (ksProps.isNotEmpty()) {
+                storeFile = rootProject.file(ksProps["storeFile"] as String)
+                storePassword = ksProps["storePassword"] as String
+                keyAlias = ksProps["keyAlias"] as String
+                keyPassword = ksProps["keyPassword"] as String
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // برای کاهش حجم بعداً این را true کن (راهنما را ببین).
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (ksProps.isNotEmpty()) signingConfigs.getByName("release")
+            else signingConfigs.getByName("debug")
+        }
+        // نسخه سبک‌تر: کدهای استفاده‌نشده حذف می‌شود (بدون تغییر نام کلاس‌ها).
+        // اگر نسخه عادی روی گوشی‌ای نصب نشد، این را امتحان کن.
+        create("lite") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
+            matchingFallbacks += listOf("release")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
+
+    packaging {
+        // کتابخانه‌های native فشرده و هنگام نصب استخراج شوند (سازگارتر با گوشی‌ها و نصب‌کننده‌های قدیمی)
+        jniLibs { useLegacyPackaging = true }
+        resources {
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*"
+            )
+        }
+    }
+}
+
+dependencies {
+    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.5")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.animation:animation")
+    implementation("androidx.compose.material3:material3")
 }
