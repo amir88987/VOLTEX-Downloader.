@@ -72,7 +72,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -93,6 +96,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -177,6 +181,84 @@ private fun outCubic(x: Float): Float {
 }
 
 private class Particle(val x: Float, val y: Float, val r: Float, val speed: Float, val phase: Float)
+
+// ───────────── لوگوتایپ VOLTEX (حروف زاویه‌دار، هم‌سبک با آیکن) ─────────────
+// هر حرف در یک جعبه ۱۰۰×۱۴۰ طراحی شده؛ مختصات به‌صورت x,y پشت‌سرهم.
+private val LetterLoops: List<List<FloatArray>> = listOf(
+    // V
+    listOf(floatArrayOf(0f, 0f, 32f, 0f, 50f, 96f, 68f, 0f, 100f, 0f, 63f, 140f, 37f, 140f)),
+    // O (بیرونی + داخلی)
+    listOf(
+        floatArrayOf(26f, 0f, 74f, 0f, 100f, 26f, 100f, 114f, 74f, 140f, 26f, 140f, 0f, 114f, 0f, 26f),
+        floatArrayOf(38f, 26f, 62f, 26f, 74f, 38f, 74f, 102f, 62f, 114f, 38f, 114f, 26f, 102f, 26f, 38f)
+    ),
+    // L
+    listOf(floatArrayOf(0f, 0f, 28f, 0f, 28f, 112f, 100f, 112f, 100f, 140f, 0f, 140f)),
+    // T
+    listOf(floatArrayOf(0f, 0f, 100f, 0f, 100f, 28f, 64f, 28f, 64f, 140f, 36f, 140f, 36f, 28f, 0f, 28f)),
+    // E
+    listOf(floatArrayOf(0f, 0f, 100f, 0f, 100f, 28f, 28f, 28f, 28f, 56f, 86f, 56f, 86f, 84f, 28f, 84f, 28f, 112f, 100f, 112f, 100f, 140f, 0f, 140f)),
+    // X
+    listOf(floatArrayOf(0f, 0f, 32f, 0f, 50f, 44f, 68f, 0f, 100f, 0f, 67f, 70f, 100f, 140f, 68f, 140f, 50f, 96f, 32f, 140f, 0f, 140f, 33f, 70f))
+)
+
+// فاصله افقی هر حرف (برای فاصله‌گذاری بصری بهتر، حرف T کمی نزدیک‌تر به L است)
+private val LetterX = floatArrayOf(0f, 114f, 228f, 318f, 430f, 546f)
+private const val WORD_ASPECT = 674f / 140f
+
+/**
+ * نوشته VOLTEX با حروف رسم‌شده: پرکننده فلزی آبی، لبه نئونی و هاله نورانی.
+ * letterProgress: پیشرفت ظاهر شدن هر حرف (۰ تا ۱)؛ sweep: جایی که نور از روی حروف رد می‌شود (شماره حرف).
+ */
+@Composable
+private fun VoltexWordmark(
+    height: Dp,
+    modifier: Modifier = Modifier,
+    letterProgress: List<Float>? = null,
+    sweep: Float = -5f
+) {
+    Canvas(modifier.height(height).aspectRatio(WORD_ASPECT)) {
+        val s = size.height / 140f
+        for (i in LetterLoops.indices) {
+            val a = letterProgress?.get(i) ?: 1f
+            if (a <= 0f) continue
+            val glow = (1f - abs(sweep - i) / 1.4f).coerceIn(0f, 1f)
+            val ox = LetterX[i] * s
+            val oy = (1f - a) * (if (i % 2 == 0) -34f else 34f) * s
+            val path = Path().apply {
+                fillType = PathFillType.EvenOdd
+                for (loop in LetterLoops[i]) {
+                    var k = 0
+                    while (k < loop.size) {
+                        val x = loop[k]
+                        val y = loop[k + 1]
+                        val px = ox + (x + (140f - y) * 0.2f) * s
+                        val py = oy + y * s
+                        if (k == 0) moveTo(px, py) else lineTo(px, py)
+                        k += 2
+                    }
+                    close()
+                }
+            }
+            // هاله
+            drawPath(path, Blue.copy(alpha = 0.10f + 0.12f * glow), alpha = a, style = Stroke(s * 16f, join = StrokeJoin.Round))
+            drawPath(path, Cyan.copy(alpha = 0.16f + 0.25f * glow), alpha = a, style = Stroke(s * 8f, join = StrokeJoin.Round))
+            // بدنه فلزی
+            val fill = Brush.verticalGradient(
+                listOf(
+                    lerp(Color(0xFFF4FAFF), Color.White, glow),
+                    lerp(Color(0xFF8CC2FF), Cyan, glow),
+                    Blue,
+                    BlueDeep
+                ),
+                startY = oy, endY = oy + 140f * s
+            )
+            drawPath(path, fill, alpha = a)
+            // لبه نئونی
+            drawPath(path, Cyan.copy(alpha = 0.55f + 0.4f * glow), alpha = a, style = Stroke(s * 2.2f, join = StrokeJoin.Round))
+        }
+    }
+}
 
 // ───────────── ریشه برنامه ─────────────
 @Composable
@@ -354,29 +436,13 @@ private fun SplashScreen(onFinished: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(30.dp))
-                Row {
-                    letters.forEachIndexed { i, ch ->
-                        val a = outCubic(seg(tv, 0.38f + 0.045f * i, 0.54f + 0.045f * i))
-                        val glow = (1f - abs(sweep - i) / 1.6f).coerceIn(0f, 1f)
-                        Text(
-                            ch.toString(),
-                            style = TextStyle(
-                                color = lerp(Color.White, Cyan, glow),
-                                fontSize = 46.sp,
-                                fontWeight = FontWeight.Black,
-                                fontStyle = FontStyle.Italic,
-                                letterSpacing = 3.sp,
-                                shadow = Shadow(Blue, Offset.Zero, 6f + 34f * glow)
-                            ),
-                            modifier = Modifier.graphicsLayer {
-                                alpha = a
-                                translationY = (1f - a) * (if (i % 2 == 0) -70f else 70f)
-                                scaleX = 0.5f + 0.5f * a
-                                scaleY = 0.5f + 0.5f * a
-                            }
-                        )
-                    }
-                }
+                VoltexWordmark(
+                    height = 56.dp,
+                    letterProgress = letters.indices.map { i ->
+                        outCubic(seg(tv, 0.38f + 0.045f * i, 0.54f + 0.045f * i))
+                    },
+                    sweep = sweep
+                )
                 Spacer(Modifier.height(8.dp))
                 Box(
                     Modifier
@@ -538,20 +604,7 @@ private fun Header() {
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(
-                "VOLTEX",
-                style = TextStyle(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color.White, Cyan, Blue, Color.White),
-                        start = Offset(shimmer * 260f, 0f),
-                        end = Offset(shimmer * 260f + 260f, 60f)
-                    ),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    fontStyle = FontStyle.Italic,
-                    letterSpacing = 3.sp
-                )
-            )
+            VoltexWordmark(height = 26.dp, sweep = (shimmer + 1f) / 3f * 9f - 1.5f)
             Text("دانلودر ویدیو یوتیوب", color = TextDim, fontSize = 13.sp)
         }
     }
