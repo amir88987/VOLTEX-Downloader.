@@ -8,6 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Unpack project
+        run: |
+          ls -la
+          test -f voltex-project.zip || { echo "::error::voltex-project.zip is not in the repo root. Upload it."; exit 1; }
+          mkdir -p proj
+          unzip -q -o voltex-project.zip -d proj
+          ls proj proj/app
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -16,6 +23,7 @@ jobs:
         with:
           gradle-version: 8.10.2
       - name: Prepare signing key
+        working-directory: proj
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -26,12 +34,13 @@ jobs:
             exit 1
           fi
           CLEAN=$(printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=')
-          echo "raw length: ${#KEYSTORE_B64}  clean length: ${#CLEAN}  (expected 3576)"
-          printf '%s' "$CLEAN" | base64 -d > release.jks || { echo "::error::KEYSTORE_B64 is not valid base64. Paste the single long line again."; exit 1; }
+          echo "clean length: ${#CLEAN} (expected 3576)"
+          printf '%s' "$CLEAN" | base64 -d > release.jks || { echo "::error::KEYSTORE_B64 is not valid base64."; exit 1; }
           PASS=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d ' \r\n')
           ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n')
           printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$PASS" "$ALIAS" "$PASS" > keystore.properties
       - name: Build release APK
+        working-directory: proj
         shell: bash
         run: |
           set -o pipefail
@@ -39,6 +48,7 @@ jobs:
           gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee logs/build-log.txt
       - name: Collect errors
         if: failure()
+        working-directory: proj
         shell: bash
         run: |
           mkdir -p logs
@@ -46,23 +56,19 @@ jobs:
           grep -E "^e: |error:|What went wrong|Execution failed|FAILED|Unresolved|AAPT" -A4 logs/build-log.txt | head -150 > logs/ERRORS.txt || true
           cat logs/ERRORS.txt
       - name: Build lite APK (smaller)
+        working-directory: proj
         continue-on-error: true
         run: gradle :app:assembleLite --no-daemon
-      - name: Show signature
-        continue-on-error: true
-        run: |
-          AS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
-          "$AS" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk | head -20
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: logs/
+          path: proj/logs/
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: VOLTEX-apk
           path: |
-            app/build/outputs/apk/release/app-release.apk
-            app/build/outputs/apk/lite/app-lite.apk
+            proj/app/build/outputs/apk/release/app-release.apk
+            proj/app/build/outputs/apk/lite/app-lite.apk
